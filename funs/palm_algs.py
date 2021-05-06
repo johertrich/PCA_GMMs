@@ -64,11 +64,7 @@ class PALM_Model(Model):
         h*=fac 
         g=tf.identity(g)
         h=tf.identity(h)
-        return g,h# Outputs:
-    #       - my_times              - list of floats. Contains the evaluation times of the training steps for each 
-    #                                 epochs.
-    #       - test_vals             - list of floats. Contains the objective function computed in the test steps for
-    #                                 each epoch. Note returned if mute=True.
+        return g,h,val
     
 
     @tf.function
@@ -76,7 +72,7 @@ class PALM_Model(Model):
         with tf.GradientTape() as tape:
             val=self(batch)
         g=tape.gradient(val,self.X[i])
-        return g
+        return g,val
 
 class PALM_Optimizer:
     # Optimizer class for functions implemented as PALM_Model.
@@ -274,15 +270,15 @@ class PALM_Optimizer:
             eval_hess=True
             for batch in self.normal_ds:
                 if eval_hess or not self.estimate_lipschitz:
-                    g,h=self.model.grad_hess_batch(batch,i)
+                    g,h,val=self.model.grad_hess_batch(batch,i)
                     grad+=g
                     hess+=h
                     self.eval_hess=False
                 else:
-                    g=self.model.grad_batch(batch,i)
+                    g,val=self.model.grad_batch(batch,i)
                     grad+=g
         else:
-            grad,hess=self.model.grad_hess_batch(None,i)
+            grad,hess,val=self.model.grad_hess_batch(None,i)
         if tf.reduce_any(tf.math.is_nan(grad)):
             print(model.X)
             raise ValueError('NaNs appeard!')
@@ -293,7 +289,7 @@ class PALM_Optimizer:
         tau_i=tf.math.multiply_no_nan(tau_i,1.-tf.cast(tf.math.is_nan(Lip),dtype=self.model.model_type))+1e10*tf.cast(tf.math.is_nan(Lip),dtype=self.model.model_type)
         self.model.X[i].assign(self.model.prox_funs[i](self.model.X[i]-grad/tau_i*self.step_size,tau_i/self.step_size))
         self.model_for_old_values.X[i].assign(Xi_save)
-        return grad,old_arg
+        return grad,old_arg,val
 
     def train_step_not_full(self,step,grads,batch,old_arg,i):
         extr=self.inertial_step_size*(step-1.)/(step+2.)
@@ -305,11 +301,11 @@ class PALM_Optimizer:
             g=tf.zeros_like(self.model.X[i])
             h=tf.zeros_like(self.model.X[i])            
             for small_batch in step_ds:
-                g_b,h_b=self.model.grad_hess_batch(small_batch,i)
+                g_b,h_b,val=self.model.grad_hess_batch(small_batch,i)
                 g+=g_b
                 h+=h_b
         else:
-            g,h=self.model.grad_hess_batch(batch,i)
+            g,h,val=self.model.grad_hess_batch(batch,i)
         Lip=tf.sqrt(tf.reduce_sum(tf.multiply(h,h)))
         tau_i=self.n*1.0/self.batch_size*tf.identity(Lip)
         tau_i=tf.math.multiply_no_nan(tau_i,1.-tf.cast(tf.math.is_nan(Lip),dtype=self.model.model_type))+1e10*tf.cast(tf.math.is_nan(Lip),dtype=self.model.model_type)
@@ -330,7 +326,7 @@ class PALM_Optimizer:
             raise ValueError('NaNs appeard!')
         self.model.X[i].assign(self.model.prox_funs[i](self.model.X[i]-grad/tau_i*self.step_size,tau_i/self.step_size))
         self.model_for_old_values.X[i].assign(Xi_save)
-        return grad,old_arg_new  
+        return grad,old_arg_new,val
 
     def precompile(self):
         # Compiles parts of the functions to tensorflow graphs to compare runtimes.
@@ -369,6 +365,7 @@ class PALM_Optimizer:
                     out=self.train_step_full(tf.convert_to_tensor(self.step,dtype=self.model.model_type),i)
                     toc=time.time()-tic
                     self.my_time+=toc
+                    val=out[-1]
             else:
                 cont=True
                 while cont:
@@ -401,6 +398,7 @@ class PALM_Optimizer:
                             out=self.train_step_full(tf.convert_to_tensor(self.step,dtype=self.model.model_type),self.component)
                         else:
                             out=self.train_step_not_full(tf.convert_to_tensor(self.step,dtype=self.model.model_type),self.grads[self.component],batch,self.old_args[self.component],self.component)
+                        val=out[-1]
                         toc=time.time()-tic
                         self.my_time+=toc
                         self.grads[self.component]=out[0]
@@ -410,7 +408,8 @@ class PALM_Optimizer:
         else:
             self.step+=1
             for i in range(self.model.num_blocks):
-                self.train_step_full(tf.convert_to_tensor(self.step,dtype=self.model.model_type),i)
+                out=self.train_step_full(tf.convert_to_tensor(self.step,dtype=self.model.model_type),i)
+                val=out[-1]
         if not self.mute:
             print('evaluate objective')
             if self.batch_version and self.test_d:
@@ -430,6 +429,7 @@ class PALM_Optimizer:
             self.test_vals.append(obj.numpy())
         self.my_times.append(self.my_time)
         self.epoch+=1
+        return val
     
     def optimize(self,EPOCHS=10):
         # Executes a fixed number of epochs
@@ -449,7 +449,7 @@ class PALM_Optimizer:
         return self.my_times
         
 
-def optimize_PALM(model,EPOCHS=10,steps_per_epoch=np.inf,data=None,test_data=None,batch_size=1000,method='iSPALM-SARAH',inertial_step_size=None,step_size=None,sarah_seq=None,sarah_p=None,precompile=False,test_batch_size=None,ensure_full=False,estimate_lipschitz=False,backup_dir='backup',mute=False):
+def optimize_PALM(model,EPOCHS=10,steps_per_epoch=np.inf,data=None,test_data=None,batch_size=1000,method='iSPALM-SARAH',inertial_step_size=None,step_size=None,sarah_seq=None,sarah_p=None,precompile=False,test_batch_size=None,ensure_full=False,estimate_lipschitz=False,backup_dir='backup',mute=False,stop_crit=-np.inf):
     # Minimizes the PALM_model using PALM/iPALM/SPRING-SARAH or iSPALM-SARAH.
     # Inputs:
     #       - model                 - PALM_Model for the objective function
@@ -524,8 +524,13 @@ def optimize_PALM(model,EPOCHS=10,steps_per_epoch=np.inf,data=None,test_data=Non
     optimizer=PALM_Optimizer(model,steps_per_epoch=steps_per_epoch,data=data,test_data=test_data,batch_size=batch_size,method=method,inertial_step_size=inertial_step_size,step_size=step_size,sarah_seq=sarah_seq,sarah_p=sarah_p,test_batch_size=test_batch_size,ensure_full=ensure_full,estimate_lipschitz=estimate_lipschitz,backup_dir=backup_dir,mute=mute)
     if precompile:   
         optimizer.precompile()
+    old_val=np.inf
     for epoch in range(EPOCHS):
-        optimizer.exec_epoch()
+        val=optimizer.exec_epoch()
+        eps=old_val-val
+        old_val=val
+        if eps<stop_crit:
+            break
     if not mute:
         if optimizer.batch_version and optimizer.test_d:
             return optimizer.my_times,optimizer.test_vals,optimizer.train_vals

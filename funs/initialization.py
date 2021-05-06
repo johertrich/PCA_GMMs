@@ -45,5 +45,5 @@ def initialize(name,K,regularize=1e-4):
     #       - regularize    - float. regularization parameter.
     samps=np.load('data/samples'+name+'.npy',allow_pickle=True)
     alphas,mus,sigmas,Us=init_MM(samps,K,regularize)
-    scipy.io.savemat('data/initialization'+name+'_gauss.mat',{'alphas': alphas, 'mus': mus, 'sigmas': sigmas, 'Us':Us})
+    scipy.io.savemat('data/initialization'+name+'K'+str(K)+'_gauss.mat',{'alphas': alphas, 'mus': mus, 'sigmas': sigmas, 'Us':Us})
 

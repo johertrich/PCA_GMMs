@@ -79,6 +79,8 @@ def opt_em(samps,alphas_init,mus_init,Sigmas_init,regularize=1e-5,steps=100,batc
     Sigmas=tf.constant(Sigmas_init,dtype=tf.float64)
     ds=tf.data.Dataset.from_tensor_slices(samps).batch(batch_size)
     tic=time.time()
+    times_E=[]
+    times_M=[]
     old_obj=0
     for step in range(steps):     
         objective=0
@@ -87,6 +89,7 @@ def opt_em(samps,alphas_init,mus_init,Sigmas_init,regularize=1e-5,steps=100,batc
         C=0
         counter=0
         print('E-Step')
+        tic_E=time.time()
         for smps in ds:
             counter+=1
             out=compute_betas(smps,alphas,mus,Sigmas)
@@ -96,48 +99,59 @@ def opt_em(samps,alphas_init,mus_init,Sigmas_init,regularize=1e-5,steps=100,batc
             objective+=out[3]
         mus_new=[]
         Sigmas_new=[]
-        print('Step '+str(step)+' Objective '+str(objective.numpy())+' Diff: ' +str(objective.numpy()-old_obj))
+        diff=objective.numpy()-old_obj
+        print('Step '+str(step)+' Objective '+str(objective.numpy())+' Diff: ' +str(diff))
+        toc_E=time.time()-tic_E
+        if step>1:
+            times_E.append(toc_E)
         old_obj=objective.numpy()
         print('M-Step')
+        tic_M=time.time()
         for k in range(K):
             mu_new_k=m[k]/(n*alphas_new[k])
             mus_new.append(mu_new_k)
             Sigma_new_k=C[k]/(n*alphas_new[k])-tf.matmul(mu_new_k[:,tf.newaxis],tf.transpose(mu_new_k[:,tf.newaxis]))
             Sigmas_new.append(Sigma_new_k+regularize*tf.eye(C.shape[2],dtype=tf.float64))
         mus_new=tf.stack(mus_new)
-        Sigmas_new=tf.stack(Sigmas_new)        
+        Sigmas_new=tf.stack(Sigmas_new)   
+        toc_M=time.time()-tic_M      
+        if step>1:
+            times_M.append(toc_M)   
         eps=tf.reduce_sum((alphas-alphas_new)**2)+tf.reduce_sum((mus-mus_new)**2)
         eps+=tf.reduce_sum((Sigmas-Sigmas_new)**2)
-        print('Step '+str(step+1)+' Time: '+str(time.time()-tic)+' Change: '+str(eps.numpy()))
+        print('Step '+str(step+1)+' Time: '+str(time.time()-tic))
         alphas=alphas_new
         mus=mus_new
         Sigmas=Sigmas_new
-        if eps<stop_crit:
-            return alphas,mus,Sigmas
-    return alphas,mus,Sigmas
+        if np.abs(diff/n)<stop_crit:
+            return alphas,mus,Sigmas,np.mean(times_E),np.mean(times_M)
+    return alphas,mus,Sigmas,np.mean(times_E),np.mean(times_M)
 
-def run_MM(name,batch_size=10000,stop_crit=1e-5):
+def run_MM(name,batch_size=10000,stop_crit=1e-5,K=100):
     # Loads the initialization declared by the parameter name, runs the EM algorithm to compute
     # the ML-estimator of the parameters of a GMM and saves the parameters.
     # INPUTS:
     #   name        - string. name of the intialization.
     #   batch_size  - batch_size paramter of opt_em. Default value: 10000.
     regularize=1e-6
-    def load_initialization(name):       
+    def load_initialization(name,K):       
         samps=np.load('data/samples'+name+'.npy')
-        filename='data/initialization'+name+'_gauss.mat'
+        filename='data/initialization'+name+'K'+str(K)+'_gauss.mat'
         data=loadmat(filename)
         alphas=np.reshape(data['alphas'],[-1])
         mus=data['mus']
         Sigmas=np.transpose(data['sigmas'],(2,0,1))
         K=mus.shape[1]
         return samps.transpose(),alphas,mus.transpose(),Sigmas,K
-    samples,alphas_init,mus_init,Sigmas_init,K=load_initialization(name)
+    samples,alphas_init,mus_init,Sigmas_init,K=load_initialization(name,K)
     d=samples.shape[1]
-    alphas,mus,Sigmas=opt_em(samples,alphas_init,mus_init,Sigmas_init,regularize=regularize,steps=100,batch_size=batch_size,stop_crit=stop_crit)
+    alphas,mus,Sigmas,time_E,time_M=opt_em(samples,alphas_init,mus_init,Sigmas_init,regularize=regularize,steps=100,batch_size=batch_size,stop_crit=stop_crit)
     if not os.path.isdir('mixture_models'):
         os.mkdir('mixture_models')
-    savemat('mixture_models/MM_EM_gauss'+name+'.mat',{'alphas': np.reshape(alphas.numpy(),[K,1]), 'mus': mus.numpy().transpose(), 'sigmas': np.transpose(Sigmas.numpy(),(1,2,0))})
+    savemat('mixture_models/MM_EM_gauss'+name+'K'+str(K)+'.mat',{'alphas': np.reshape(alphas.numpy(),[K,1]), 'mus': mus.numpy().transpose(), 'sigmas': np.transpose(Sigmas.numpy(),(1,2,0))})
+    print(time_E)
+    print(time_M)
+    return time_E,time_M
 
 
 

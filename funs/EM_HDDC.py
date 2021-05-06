@@ -14,17 +14,7 @@ import time
 from scipy.io import loadmat, savemat
 import os
 
-@tf.function
-def my_prox(X,lam):
-    # Projects the matrices X[...,:,:] onto the orthogonal Stiefel manifold.
-    num_iter=4
-    Y=X
-    for i in range(num_iter):
-        Y_inv=tf.eye(X.shape[2],dtype=tf.float64,batch_shape=[X.shape[0]])+tf.matmul(Y,Y,transpose_a=True)
-        Y=2*tf.matmul(Y,tf.linalg.inv(Y_inv))
-    return Y
-
-def opt_em_pca(samps,alphas_init,Sigmas_init,Us_init,bs_init,sigma_sq,learn_sigma_sq=False,regularize=1e-5,steps=100,batch_size=1000,palm_steps=200):
+def opt_em_hddc(samps,alphas_init,Sigmas_init,Us_init,bs_init,sigma_sq,regularize=1e-5,steps=100,batch_size=1000):
     # Implements the EM algorithm for estimating the parameters of a PCA-GMM model.
     # INPUTS:
     #   samps       - N x n numpy array, where samps[i] contains the i-th data point
@@ -69,7 +59,6 @@ def opt_em_pca(samps,alphas_init,Sigmas_init,Us_init,bs_init,sigma_sq,learn_sigm
             factor=-0.5*Sigma_logdet-0.5*deltas
             high_low_dim_inp=tf.matmul(low_dim_inp,U,transpose_b=True)+b
             pca_loss=-(1./(2*sigma_sq[k]))*tf.reduce_sum((inputs-high_low_dim_inp)**2,1)
-            #print(tf.reduce_max(pca_loss))
             log_line=factor+pca_loss+tf.math.log(alpha)
             log_fun_vals.append(log_line)
         log_fun_vals=tf.stack(log_fun_vals)
@@ -95,18 +84,15 @@ def opt_em_pca(samps,alphas_init,Sigmas_init,Us_init,bs_init,sigma_sq,learn_sigm
         C=tf.stack(C)
         return alphas_new,m,C,obj
    
-    my_prox_all=my_prox
-        
     
     alphas=tf.constant(alphas_init,dtype=tf.float64)
-    Sigmas=tf.constant(Sigmas_init,dtype=tf.float64)   
+    Sigmas=tf.constant(Sigmas_init,dtype=tf.float64) 
     Us=tf.constant(Us_init,dtype=tf.float64)
     ds=tf.data.Dataset.from_tensor_slices(samps).batch(batch_size)
     bs=tf.constant(bs_init,dtype=tf.float64)
     sigma_sq=tf.constant(sigma_sq,dtype=tf.float64)
     if sigma_sq.shape==[]:
         sigma_sq=sigma_sq*tf.ones(K,dtype=tf.float64)
-
     tic=time.time()
     times_E=[]
     times_M=[]
@@ -138,40 +124,14 @@ def opt_em_pca(samps,alphas_init,Sigmas_init,Us_init,bs_init,sigma_sq,learn_sigm
         old_obj=objective.numpy()
         bs_new=m/(n*tf.expand_dims(alphas_new,-1))
         S=C-(tf.matmul(m[:,:,tf.newaxis],m[:,:,tf.newaxis],transpose_b=True)/(n*alphas_new[:,tf.newaxis,tf.newaxis]))+1e-10*tf.eye(d,dtype=tf.float64,batch_shape=[K])
-        S_e,S_v=tf.linalg.eigh(S)      
-        if learn_sigma_sq:
-            trace_S=tf.reduce_sum(S_e,-1)
-            def H_all(X,batch=None):
-                Us=X[0]
-                UtSU=tf.matmul(Us,tf.tile(S_e[:,:,tf.newaxis],(1,1,Us.shape[2]))*Us,transpose_a=True)
-                out=tf.reduce_sum(alphas_new*n_minus_d*tf.math.log(trace_S-tf.linalg.trace(UtSU)))
-                out+=tf.reduce_sum(alphas_new*tf.linalg.logdet(UtSU))
-                return out*n
-        else:
-            def H_all(X,batch=None):
-                Us=X[0]
-                UtSU=tf.matmul(Us,tf.tile(S_e[:,:,tf.newaxis],(1,1,Us.shape[2]))*Us,transpose_a=True)
-                out=-tf.reduce_sum(tf.linalg.trace(UtSU)/sigma_sq)
-                out+=tf.reduce_sum(n*alphas_new*tf.linalg.logdet(UtSU))
-                return out
-        Us_ini=tf.matmul(S_v,Us,transpose_a=True)
-        model=PALM_Model([Us_ini.numpy()],dtype='float64')
-        model.H=H_all
-        model.prox_funs=[my_prox_all]
-        optimize_PALM(model,method='iPALM',EPOCHS=palm_steps,backup_dir=None,mute=True,inertial_step_size=1.,step_size=1.,stop_crit=n*1e-4)
-        Us_new=model.X[0]
-        UtSU=tf.matmul(Us_new,tf.tile(S_e[:,:,tf.newaxis],(1,1,Us.shape[2]))*Us_new,transpose_a=True)
-        Us_new=tf.matmul(S_v,Us_new)
-        Sigmas_new=UtSU/(n*alphas_new[:,tf.newaxis,tf.newaxis])+regularize*tf.eye(Us.shape[2],dtype=tf.float64,batch_shape=[K])
-        if learn_sigma_sq:
-            sigma_sq_new=(trace_S-tf.linalg.trace(UtSU))/(n*alphas_new*n_minus_d)+regularize  
-        Sigmas_new,Sigmas_v=tf.linalg.eigh(Sigmas_new)
-        Us_new=tf.matmul(Us_new,Sigmas_v)
-        toc_M=time.time()-tic_M      
+        S_e,S_v=tf.linalg.eigh(S/(n*alphas_new[:,tf.newaxis,tf.newaxis]))
+        Us_new=S_v[:,:,-Us.shape[2]:]
+        Sigmas_new=S_e[:,-Us.shape[2]:]+regularize
+        sigma_sq_new=tf.reduce_mean(S_e[:,:-Us.shape[2]],-1)+regularize
+        toc_M=time.time()-tic_M
         if step>1:
             times_M.append(toc_M)
-        if learn_sigma_sq:
-            sigma_sq=sigma_sq_new
+        sigma_sq=sigma_sq_new
         print('Step '+str(step+1)+' Time: '+str(time.time()-tic))
         alphas=alphas_new
         Us=Us_new
@@ -239,7 +199,6 @@ def initialize_U(samps,alphas,mus,Sigmas,Us,sigma_sq,learn_sigma_sq=False,batch_
         C=tf.stack(C)
         return alphas_new,m,C
 
-    my_prox_all=my_prox
 
     alphas=tf.constant(alphas,dtype=tf.float64)
     mus=tf.constant(mus,dtype=tf.float64)
@@ -263,12 +222,10 @@ def initialize_U(samps,alphas,mus,Sigmas,Us,sigma_sq,learn_sigma_sq=False,batch_
     S=C-(tf.matmul(m[:,:,tf.newaxis],m[:,:,tf.newaxis],transpose_b=True)/(n*alphas_new[:,tf.newaxis,tf.newaxis]))
     S_e,S_v=tf.linalg.eigh(S/(n*alphas_new[:,tf.newaxis,tf.newaxis]))
     Us_new=S_v[:,:,-Us.shape[2]:]
-    Sigmas_new=S_e[:,-Us.shape[2]:]+regularize    
+    Sigmas_new=S_e[:,-Us.shape[2]:]+regularize
+    sigma_sq_new=tf.reduce_mean(S_e[:,:-Us.shape[2]],-1)+regularize
     print('Initialization of U complete!')
-    if learn_sigma_sq:
-        sigma_sq_new=tf.reduce_mean(S_e[:,:-Us.shape[2]],-1)+regularize
-        return alphas_new,Us_new.numpy(), bs_new,Sigmas_new,sigma_sq_new.numpy()
-    return alphas_new,Us_new.numpy(), bs_new,Sigmas_new
+    return Us_new.numpy(), bs_new,Sigmas_new,sigma_sq_new.numpy()
     
 def initialize_one_U(samps,s):
     # Generates an initialization for one U based on the PCA of all data points.
@@ -301,7 +258,7 @@ def load_initialization(name,K):
     K=mus.shape[1]
     return samps.transpose(),alphas,mus.transpose(),Sigmas,Us,K
 
-def run_MM(name,s,use_bias=True,batch_size=10000,learn_sigma_sq=True,palm_steps=200,K=100):
+def run_MM(name,s,use_bias=True,batch_size=10000,K=100):
     # Loads the initialization declared by the parameter name, runs the EM algorithm to compute
     # the ML-estimator of the parameters of a PCA-reduced MM GMM and saves the parameters.
     # INPUTS:
@@ -312,29 +269,20 @@ def run_MM(name,s,use_bias=True,batch_size=10000,learn_sigma_sq=True,palm_steps=
     #   batch_size  - batch_size paramter of opt_em. Default value: 10000.
     #   use_bias    - declares whether to use the bias in the PCA.
     regularize=1e-8
-    sigma_sq=4e-4
+    sigma_sq=1e-4
     samples,alphas_init,mus_init,Sigmas_init,Us_init,K=load_initialization(name,K)
     d=samples.shape[1]
     dim_hr=64
     Us_init=initialize_one_U(samples,s)
     Us_init=tf.tile(tf.expand_dims(Us_init,0),(K,1,1))
-    if learn_sigma_sq:    
-        alphas_init,Us_init,bs_init,Sigmas_new,sigma_sq=initialize_U(samples,alphas_init,mus_init,Sigmas_init,Us_init,regularize,batch_size=batch_size,regularize=regularize,learn_sigma_sq=learn_sigma_sq)
-    else:
-        alphas_init,Us_init,bs_init,Sigmas_new=initialize_U(samples,alphas_init,mus_init,Sigmas_init,Us_init,regularize,batch_size=batch_size,regularize=regularize,learn_sigma_sq=learn_sigma_sq)
+    Us_init,bs_init,Sigmas_new,sigma_sq=initialize_U(samples,alphas_init,mus_init,Sigmas_init,Us_init,regularize,batch_size=batch_size,regularize=regularize,learn_sigma_sq=True)
     
     Sigmas_init=Sigmas_new
-    if learn_sigma_sq:
-        alphas,Sigmas,Us,bs,sigma_sq,time_E,time_M=opt_em_pca(samples,alphas_init,Sigmas_init,Us_init,bs_init,sigma_sq,regularize=regularize,steps=100,batch_size=batch_size,learn_sigma_sq=learn_sigma_sq,palm_steps=palm_steps)
-    else:
-        alphas,Sigmas,Us,bs,sigma_sq,time_E,time_M=opt_em_pca(samples,alphas_init,Sigmas_init,Us_init,bs_init,sigma_sq,regularize=regularize,steps=100,batch_size=batch_size,learn_sigma_sq=learn_sigma_sq,palm_steps=palm_steps)
+    alphas,Sigmas,Us,bs,sigma_sq,time_E,time_M=opt_em_hddc(samples,alphas_init,Sigmas_init,Us_init,bs_init,sigma_sq,regularize=regularize,steps=100,batch_size=batch_size)
     mus=tf.zeros((K,Us.shape[2]),dtype=tf.float64)
     if not os.path.isdir('mixture_models'):
         os.mkdir('mixture_models')
-    if learn_sigma_sq:
-        savemat('mixture_models/MM_PCA_learn_'+str(s)+name+'K'+str(K)+'.mat',{'alphas': np.reshape(alphas.numpy(),[K,1]), 'mus': mus.numpy().transpose(), 'sigmas': np.transpose(tf.linalg.diag(Sigmas).numpy(),(1,2,0)), 'us': np.transpose(Us.numpy(),(1,2,0)),'bs': bs.numpy().transpose(),'sigma_sq': np.reshape(sigma_sq.numpy(),[K,1])})    
-    else:
-        savemat('mixture_models/MM_PCA_'+str(s)+name+'K'+str(K)+'.mat',{'alphas': np.reshape(alphas.numpy(),[K,1]), 'mus': mus.numpy().transpose(), 'sigmas': np.transpose(tf.linalg.diag(Sigmas).numpy(),(1,2,0)), 'us': np.transpose(Us.numpy(),(1,2,0)),'bs': bs.numpy().transpose(),'sigma_sq': np.reshape(sigma_sq.numpy(),[K,1])})
+    savemat('mixture_models/MM_HDDC_'+str(s)+name+'K'+str(K)+'.mat',{'alphas': np.reshape(alphas.numpy(),[K,1]), 'mus': mus.numpy().transpose(), 'sigmas': np.transpose(tf.linalg.diag(Sigmas).numpy(),(1,2,0)), 'us': np.transpose(Us.numpy(),(1,2,0)),'bs': bs.numpy().transpose(),'sigma_sq': np.reshape(sigma_sq.numpy(),[K,1])})
     print(time_E)
     print(time_M)
     return time_E,time_M

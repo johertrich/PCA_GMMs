@@ -6,6 +6,7 @@ It is available at
 https://arxiv.org/abs/2009.07520.
 
 The repository contains an implementation of the superresolution method from [3] using the EM algorithm for PCA reduced Gaussian mixture models (GMMs) as introduced in [1].
+As comparison also the EM algorithm for HDDC [4] is implemented.
 For learning these PCA reduced GMMs, we use the implementation framework from [2], which is available at https://github.com/johertrich/Inertial-Stochastic-PALM.
 In particular, it contains the code to reproduce the numerical examples from the paper [1].
 
@@ -123,7 +124,11 @@ Outputs:
 Resulting parameters:
 - **alphas** - numpy array of length K
 - **mus** - K x n numpy array
-- **Sigmas** - K x n x n numpy array
+- **Sigmas** - K x n x n numpy array  
+
+Computation times:
+- **time_E** - average computation time for the E-step
+- **time_M** - average computation time for the M-step
 
 #### function `run_MM`
 
@@ -133,6 +138,10 @@ Inputs:
 
 - **name** - string. name of the intialization.
 - **batch_size** - optional batch\_size paramter of opt\_em. Default value: 10000.
+
+Outputs:  
+- **time_E** - average computation time for the E-step
+- **time_M** - average computation time for the M-step
 
 ### In `funs.EM_PCA`
 
@@ -150,13 +159,18 @@ Optional:
 - **regularize** - regularization constant for the covariance matrix. Default value: 1e-5.
 - **steps** - number of steps. Default value: 100.
 - **batch_size** - Parameter for the computation order. Does not effect the results, but the execution time. Default: 10000
+- **learn_sigma_sq** - True for learning sigma\_sq within the EM algorithm, False for fixed sigma\_sq. Default: False
 
 Outputs:  
 Resulting parameters:  
 - **alphas** - numpy array of length K
 - **Sigmas** - K x d x d numpy array
 - **Us** - K x n x d numpy array
-- **bs** - K x n numpy array
+- **bs** - K x n numpy array  
+
+Computation times:
+- **time_E** - average computation time for the E-step
+- **time_M** - average computation time for the M-step
 
 #### function `initialize_U`
 
@@ -214,6 +228,15 @@ Optional:
 
 - **batch_size** - batch\_size paramter of opt\_em. Default value: 10000.
 - **use_bias** - declares whether to use the bias in the PCA.
+- **learn_sigma_sq** - True for learning sigma\_sq within the EM algorithm, False for fixed sigma\_sq. Default: False
+
+Outputs:  
+- **time_E** - average computation time for the E-step
+- **time_M** - average computation time for the M-step
+
+### In `funs.EM_HDDC`
+
+Similar functions as in `funs.EM_PCA`. The only difference is that the EM-algorithm is perforemed for a HDDC [4] model and not for a PCA-GMM model [1].
 
 ### In `funs.reconstruction`
 
@@ -330,4 +353,8 @@ ArXiv preprint arXiv:2005.02204, 2020.
 [3] P. Sandeep and T. Jacob.  
 Single image super-resolution using a joint GMM method.  
 IEEE Transactions on Image Processing, 25(9):4233–4244, 2016.
+
+[4] C. Bouveyron, S. Girard and C. Schmid.  
+High-dimensional data clustering.  
+Computational statistics & data analysis 52.1: 502-519, 2007.
 

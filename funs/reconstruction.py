@@ -220,7 +220,7 @@ def superresolution_gauss(MM_name,img_name,q=2,tau=4):
     print(res_psnr)
     return res_psnr
 
-def superresolution_PCA(MM_name,img_name,q=2,tau=4,sigma_sq=1e-4):
+def superresolution_PCA(MM_name,img_name,q=2,tau=4):
     # Loads a PCA-reduced GMM and a low resolution image and reconstructs the corresponding high resolution image using the method
     # from citation [3] from the readme file and saves the reconstruction.
     # Inputs:
@@ -237,14 +237,16 @@ def superresolution_PCA(MM_name,img_name,q=2,tau=4,sigma_sq=1e-4):
     mus=MM['mus'].transpose()
     Sigmas=np.transpose(MM['sigmas'],(2,0,1))
     Us=np.transpose(MM['us'],(2,0,1))
+    sigma_sq=np.reshape(MM['sigma_sq'],[-1])
     print(Us.shape)
+    print(tf.reduce_min(tf.linalg.eigvalsh(Sigmas)))
     bs=MM['bs'].transpose()
     K=alphas.shape[0]
     d=Us.shape[1]
     Sigmas_full=np.zeros((K,d,d))
     mus_full=np.zeros((K,d))
     for k in range(K):
-        Sigmas_full[k]=np.linalg.inv(1/sigma_sq *(np.eye(d)-Us[k].dot(Us[k].transpose()))+Us[k].dot(np.linalg.inv(Sigmas[k]).dot(Us[k].transpose())))
+        Sigmas_full[k]=np.linalg.inv(1/sigma_sq[k] *(np.eye(d)-Us[k].dot(Us[k].transpose()))+Us[k].dot(np.linalg.inv(Sigmas[k]).dot(Us[k].transpose())))
         mus_full[k]=Sigmas_full[k].dot(Us[k].dot(np.linalg.inv(Sigmas[k]).dot(mus[k])))+bs[k]
     img_m=scipy.io.loadmat('./imgs_superres/'+img_name+'.mat')
     img_obs=img_m['img_lr']
