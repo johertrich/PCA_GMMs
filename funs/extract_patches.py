@@ -1,8 +1,8 @@
 # This code belongs to the paper
 #
-# L. Nguyen, J. Hertrich, J-F. Aujol, D. Bernard, Y. Berthoumieu, G. Steidl.
+# J. Hertrich, L. Nguyen, J-F. Aujol, D. Bernard, Y. Berthoumieu, G. Steidl.
 # PCA Reduced Gaussian Mixture Models with Applications in Superresolution.
-# ArXiv preprint arXiv:2009.07520, 2020
+# Inverse Problems and Imaging, 2021.
 #
 # Please cite the paper, if you use the code.
 #

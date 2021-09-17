@@ -3,6 +3,8 @@
 This code belongs to the paper [1]. Please cite the paper, if you use this code.
 
 It is available at  
+https://dx.doi.org/10.3934/ipi.2021053  
+Further, an Arxiv-preprint can be found at  
 https://arxiv.org/abs/2009.07520.
 
 The repository contains an implementation of the superresolution method from [3] using the EM algorithm for PCA reduced Gaussian mixture models (GMMs) as introduced in [1].
@@ -344,7 +346,7 @@ Note that the data for this example is not contained in the repository because i
 
 [1] J. Hertrich, D. P. L. Nguyen, J.-F. Aujol, D. Bernard, Y. Berthoumieu, A. Saadaldin and G. Steidl.  
 PCA reduced Gaussian mixture models with application in superresolution.  
-ArXiv preprint arXiv:2009.07520, 2020.
+Inverse Problems and Imaging, 2021.
 
 [2] J. Hertrich and G. Steidl.  
 Inertial Stochastic PALM (iSPALM) and Applications in Machine Learning.  
