@@ -1,8 +1,8 @@
 # This code belongs to the paper
 #
-# J. Hertrich, L. Nguyen, J-F. Aujol, D. Bernard, Y. Berthoumieu, G. Steidl.
-# PCA Reduced Gaussian Mixture Models with Applications in Superresolution.
-# Inverse Problems and Imaging, 2021.
+# J. Hertrich and G. Steidl. 
+# Inertial Stochastic PALM (iSPALM) and Applications in Machine Learning.
+# ArXiv preprint arXiv:2005.02204, 2020.
 #
 # Please cite the paper, if you use the code.
 
