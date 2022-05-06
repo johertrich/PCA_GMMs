@@ -12,6 +12,8 @@ As comparison also the EM algorithm for HDDC [4] is implemented.
 For learning these PCA reduced GMMs, we use the implementation framework from [2], which is available at https://github.com/johertrich/Inertial-Stochastic-PALM.
 In particular, it contains the code to reproduce the numerical examples from the paper [1].
 
+The material images "FS" and "diam" have been acquired in the frame of the EU Horizon 2020 Marie Sklodowska-Curie Actions Innovative Training Network MUMMERING (MUltiscale, Multimodal and Multidimensional imaging for EngineeRING, Grant Number 765604) at the beamline TOMCAT of the SLS by A. Saadaldin, D. Bernard, and F. Marone Welford.
+
 For questions and bug reports, please contact Johannes Hertrich (j.hertrich(at)math.tu-berlin.de).
 
 ## CONTENTS
